@@ -1,7 +1,5 @@
 package org.prography;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -15,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.prography.geo.GeoRectSlice;
 
 class RectTest {
+
     private final String GEO_JSON = "HangJeongDong_ver20250401.geojson";
 
     @Test
@@ -33,7 +32,8 @@ class RectTest {
             JsonObject properties = feature.getAsJsonObject("properties");
 
             String dongName = properties.get("adm_nm").getAsString();  // 동 이름
-            String sigunguName = properties.has("sidonm") ? properties.get("sidonm").getAsString() : "";
+            String sigunguName =
+                properties.has("sidonm") ? properties.get("sidonm").getAsString() : "";
             String fullName = sigunguName.isEmpty() ? dongName : sigunguName + " " + dongName;
 
             System.out.println(" - " + fullName);
@@ -42,14 +42,9 @@ class RectTest {
 
     @Test
     @DisplayName(value = "행정 구역에 맞춰서 자르기")
-    void sliceRect() throws IOException {
-        Path geoPath = Path.of(GEO_JSON);
-        String json = Files.readString(geoPath);
-
-        JsonObject jsonObject = JsonParser.parseString(json).getAsJsonObject();
-        JsonArray features = jsonObject.getAsJsonArray("features");
-
-        List<String> rectList = GeoRectSlice.sliceRectFromFeature(features, "서울특별시 강남구 삼성1동");
+    void sliceRect() {
+        GeoRectSlice geoRectSlice = GeoRectSlice.getInstance();
+        List<String> rectList = geoRectSlice.sliceRectFromFeature("서울특별시 강남구 삼성1동");
 
         for (String s : rectList) {
             System.out.println(s);

@@ -2,46 +2,101 @@ package org.prography.geo;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonIOException;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public final class GeoRectSlice {
 
-    public static List<String> sliceRectFromFeature(JsonArray features, String admName) {
-        return sliceRectFromFeature(features, admName, 0.005);
+    private static class Keys {
+
+        static final String FEATURES = "features";
+        static final String PROPERTIES = "properties";
+        static final String ADM_NM = "adm_nm";
+        static final String GEOMETRY = "geometry";
+        static final String TYPE = "type";
+        static final String COORDINATES = "coordinates";
+        static final String MULTI_POLYGON = "MultiPolygon";
+    }
+
+    private static final String RESOURCE_PATH = "HangJeongDong_ver20250401.geojson";
+    private static final double DEFAULT_STEP = 0.005; // 약 500m
+    private final JsonArray features;
+
+    private static class Holder {
+
+        private static final GeoRectSlice INSTANCE = new GeoRectSlice();
+    }
+
+    public static GeoRectSlice getInstance() {
+        return Holder.INSTANCE;
+    }
+
+    private GeoRectSlice() {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(RESOURCE_PATH)) {
+            Objects.requireNonNull(is, "Resource not found: " + RESOURCE_PATH);
+            try (Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+                this.features = root.getAsJsonArray(Keys.FEATURES);
+            }
+        } catch (IOException | JsonIOException | JsonSyntaxException e) {
+            throw new IllegalStateException("Failed to load/parse geojson: " + RESOURCE_PATH, e);
+        }
+    }
+
+    public List<String> sliceRectFromFeature(String admName) {
+        return sliceRectFromFeature(admName, DEFAULT_STEP);
     }
 
     /**
      * 특정 행정동(adm_nm)에 대한 geometry 영역을 rect로 나눈다.
      *
-     * @param features 전체 GeoJSON Feature 배열
-     * @param admName  대상 adm_nm (예: "서울특별시 종로구 사직동")
-     * @param step     슬라이스 단위 (예: 0.005) = 대략 500 미터
-     * @return rect 리스트 (rect = "x1,y2,x2,y1" 형식)
+     * @param admName 대상 adm_nm (예: "서울특별시 종로구 사직동")
+     * @param step    슬라이스 단위 (도 단위, approx. 거리 아래 표 참고)
+     *                <ul>
+     *                  <li>0.001 ≈ 100m</li>
+     *                  <li>0.002 ≈ 200m</li>
+     *                  <li>0.005 ≈ 500m</li>
+     *                  <li>0.01  ≈ 1km</li>
+     *                </ul>
+     * @return rect 리스트 (rect = "서쪽,북쪽,동쪽,남쪽" = "x1,y2,x2,y1")
      */
-    public static List<String> sliceRectFromFeature(JsonArray features, String admName, double step) {
-        List<String> rectList = new ArrayList<>();
+    public List<String> sliceRectFromFeature(String admName, double step) {
+        List<String> rects = new ArrayList<>();
 
         for (JsonElement elem : features) {
             JsonObject feature = elem.getAsJsonObject();
-            JsonObject properties = feature.getAsJsonObject("properties");
+            JsonObject properties = feature.getAsJsonObject(Keys.PROPERTIES);
 
-            if (!properties.get("adm_nm").getAsString().equals(admName))
+            if (!admName.equals(properties.get(Keys.ADM_NM).getAsString())) {
                 continue;
+            }
 
-            JsonObject geometry = feature.getAsJsonObject("geometry");
-            if (!geometry.has("coordinates")) continue;
+            JsonObject geometry = feature.getAsJsonObject(Keys.GEOMETRY);
+            if (!geometry.has(Keys.COORDINATES)) {
+                break;
+            }
 
-            JsonArray outerRing = geometry.get("type").getAsString().equals("MultiPolygon")
-                ? geometry.getAsJsonArray("coordinates").get(0).getAsJsonArray().get(0).getAsJsonArray()
-                : geometry.getAsJsonArray("coordinates").get(0).getAsJsonArray();
+            // MultiPolygon 또는 Polygon 외곽선 좌표 추출
+            JsonArray outer = extractOuterRing(geometry);
 
-            double minX = Double.MAX_VALUE, maxX = Double.MIN_VALUE;
-            double minY = Double.MAX_VALUE, maxY = Double.MIN_VALUE;
+            // Bounding box 계산
+            double minX = Double.POSITIVE_INFINITY,
+                maxX = Double.NEGATIVE_INFINITY,
+                minY = Double.POSITIVE_INFINITY,
+                maxY = Double.NEGATIVE_INFINITY;
 
-            for (JsonElement point : outerRing) {
-                JsonArray coord = point.getAsJsonArray();
+            for (JsonElement pt : outer) {
+                JsonArray coord = pt.getAsJsonArray();
                 double x = coord.get(0).getAsDouble();
                 double y = coord.get(1).getAsDouble();
                 minX = Math.min(minX, x);
@@ -52,17 +107,26 @@ public final class GeoRectSlice {
 
             for (double x = minX; x < maxX; x += step) {
                 for (double y = minY; y < maxY; y += step) {
-                    double x1 = x;
-                    double y1 = y;
                     double x2 = Math.min(x + step, maxX);
                     double y2 = Math.min(y + step, maxY);
-                    String rect = "%.6f,%.6f,%.6f,%.6f".formatted(x1, y2, x2, y1);
-                    rectList.add(rect);
+                    rects.add("%.6f,%.6f,%.6f,%.6f".formatted(x, y2, x2, y));
                 }
             }
-            break; // adm_nm 찾았으면 중단
-        }
 
-        return rectList;
+            break;
+        }
+        return rects;
+    }
+
+    private static JsonArray extractOuterRing(JsonObject geometry) {
+        String type = geometry.get(Keys.TYPE).getAsString();
+        JsonArray coordinates = geometry.getAsJsonArray(Keys.COORDINATES);
+
+        if (Keys.MULTI_POLYGON.equals(type)) {
+            return coordinates.get(0).getAsJsonArray()
+                .get(0).getAsJsonArray();
+        } else {
+            return coordinates.get(0).getAsJsonArray();
+        }
     }
 }
