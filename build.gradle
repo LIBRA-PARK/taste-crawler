@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.prography'
+version = '1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation('com.microsoft.playwright:playwright:1.51.0')
+
+    implementation('org.mongodb:mongodb-driver-sync:5.4.0')
+    implementation('com.google.code.gson:gson:2.11.0')
+//    testImplementation('com.microsoft.playwright:playwright-junit:1.51.0')
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
