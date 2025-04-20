@@ -1,53 +1,38 @@
 package org.prography;
 
-import static com.mongodb.client.model.Filters.eq;
-import static com.mongodb.client.model.Updates.push;
-
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.UpdateOptions;
+import com.google.gson.JsonObject;
 import java.util.List;
-import org.bson.Document;
+import org.prography.geo.GeoRectSlice;
+import org.prography.kakao.KakaoJsonParser;
+import org.prography.kakao.KakaoLocalSearch;
+import org.prography.mongo.MongoDocumentRepository;
 
 public class Main {
+
     public static void main(String[] args) {
-        // 1) MongoDB 접속 (로컬)
-        try (MongoClient client = MongoClients.create("mongodb://localhost:27017")) {
-            MongoDatabase db = client.getDatabase("test");
-            MongoCollection<Document> coll = db.getCollection("items");
+        KakaoLocalSearch search = new KakaoLocalSearch();
+        MongoDocumentRepository repo = MongoDocumentRepository.getInstance();
+        GeoRectSlice slice = GeoRectSlice.getInstance();
+        List<String> rectList = slice.sliceRectFromFeature("서울특별시 강남구 삼성1동");
 
-            String key = "myKey";
-            // 2) upsert: 키가 없으면 빈 문서로 생성
-            coll.updateOne(
-                eq("_id", key),
-                new Document("$setOnInsert", new Document()),
-                new UpdateOptions().upsert(true)
-            );
+        int page = 1;
+        for (String rect : rectList) {
+            JsonObject jsonObject = search.callLocalSearchApi(rect, page);
+            if (!KakaoJsonParser.isEndPage(jsonObject)) {
+                List<JsonObject> documents = KakaoJsonParser.getDocuments(jsonObject);
+                for (JsonObject document : documents) {
+                    String id = KakaoJsonParser.toId(document, "address_name", "place_name");
+                    boolean inserted = repo.saveIfNotExists(id, document);
+                    if (inserted) {
+                        System.out.printf("Inserted: [%s]%n", id);
+                    } else {
+                        System.out.printf("Skip (exists): [%s]%n", id);
+                    }
 
-            // 3) 반복문으로 4개의 JSON 객체를 values 배열에 추가
-            Document[] docs = new Document[] {
-                Document.parse("{\"foo\":7, \"bar\":\"A\"}"),
-                Document.parse("{\"foo\":8, \"bar\":\"B\"}"),
-                Document.parse("{\"foo\":9, \"bar\":\"C\"}"),
-                Document.parse("{\"foo\":10, \"bar\":\"D\"}")
-            };
-            for (Document d : docs) {
-                coll.updateOne(
-                    eq("_id", key),
-                    push("values", d)
-                );
-            }
-
-            // 4) 최종 문서 조회 및 values 배열 출력
-            Document result = coll.find(eq("_id", key)).first();
-            if (result != null) {
-                List<Document> values = result.getList("values", Document.class);
-                System.out.println(">> values 배열 내용:");
-                values.forEach(v -> System.out.println("  " + v.toJson()));
+                }
+                page++;
             } else {
-                System.out.println("문서를 찾을 수 없습니다.");
+                page = 1;
             }
         }
     }
