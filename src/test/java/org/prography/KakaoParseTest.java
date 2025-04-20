@@ -1,9 +1,12 @@
 package org.prography;
 
 import static com.mongodb.client.model.Filters.eq;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -18,14 +21,16 @@ import org.junit.jupiter.api.Test;
 import org.prography.kakao.KakaoJsonParser;
 
 class KakaoParseTest {
+
     private final String JSON_PATH = "temp.json";
 
     @Test
     @DisplayName("정상적으로 파싱 되는지 확인")
     void testParseDocumentsFromFile() throws Exception {
         Path jsonPath = Path.of(JSON_PATH);
-        String json = Files.readString(jsonPath);
-        List<JsonObject> docs = KakaoJsonParser.parseDocumentsFromString(json);
+        JsonObject jsonObject = JsonParser.parseString(Files.readString(jsonPath))
+            .getAsJsonObject();
+        List<JsonObject> docs = KakaoJsonParser.getDocuments(jsonObject);
 
         assertNotNull(docs);
         assertFalse(docs.isEmpty());
@@ -37,8 +42,9 @@ class KakaoParseTest {
     @DisplayName("마지막 페이지 확인")
     void testIsEndPage() throws IOException {
         Path jsonPath = Path.of(JSON_PATH);
-        String jsonString = Files.readString(jsonPath);
-        boolean endPage = KakaoJsonParser.isEndPage(jsonString);
+        JsonObject jsonObject = JsonParser.parseString(Files.readString(jsonPath))
+            .getAsJsonObject();
+        boolean endPage = KakaoJsonParser.isEndPage(jsonObject);
 
         assertFalse(endPage);
     }
@@ -47,8 +53,9 @@ class KakaoParseTest {
     @DisplayName("address_name 과 place_name 으로 아이디 만들기")
     void testMakeKey() throws Exception {
         Path jsonPath = Path.of(JSON_PATH);
-        String json = Files.readString(jsonPath);
-        List<JsonObject> docs = KakaoJsonParser.parseDocumentsFromString(json);
+        JsonObject jsonObject = JsonParser.parseString(Files.readString(jsonPath))
+            .getAsJsonObject();
+        List<JsonObject> docs = KakaoJsonParser.getDocuments(jsonObject);
 
         assertNotNull(docs);
         assertFalse(docs.isEmpty());
@@ -66,11 +73,11 @@ class KakaoParseTest {
             MongoCollection<Document> coll = db.getCollection("KAKAO_INFO");
 
             Path jsonPath = Path.of(JSON_PATH);
-            String json = Files.readString(jsonPath);
-            List<JsonObject> docs = KakaoJsonParser.parseDocumentsFromString(json);
+            JsonObject jsonObject = JsonParser.parseString(Files.readString(jsonPath))
+                .getAsJsonObject();
+            List<JsonObject> docs = KakaoJsonParser.getDocuments(jsonObject);
 
-
-            for (JsonObject jsonObject : docs) {
+            for (JsonObject doc : docs) {
                 String id = KakaoJsonParser.toId(jsonObject, "address_name", "place_name");
 
                 boolean exists = coll.find(eq("_id", id)).iterator().hasNext();
@@ -80,7 +87,7 @@ class KakaoParseTest {
                 }
 
                 Document mongoDoc = new Document("_id", id)
-                    .append("value", Document.parse(jsonObject.toString()));
+                    .append("value", Document.parse(doc.toString()));
 
                 coll.insertOne(mongoDoc);
                 System.out.printf("Inserted: [%s]%n", id);
