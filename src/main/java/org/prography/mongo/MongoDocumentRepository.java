@@ -3,10 +3,19 @@ package org.prography.mongo;
 import static com.mongodb.client.model.Filters.eq;
 
 import com.google.gson.JsonObject;
+import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.BulkWriteOptions;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.client.model.UpdateOptions;
+import com.mongodb.client.model.WriteModel;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import org.bson.Document;
 
 public class MongoDocumentRepository {
@@ -41,17 +50,57 @@ public class MongoDocumentRepository {
      * @return true if inserted, false if skipped due to duplicate
      */
     public boolean saveIfNotExists(String id, JsonObject document) {
-        // 존재 여부 체크
         if (coll.find(eq("_id", id)).first() != null) {
-            // 이미 있음
             return false;
         }
 
-        // 삽입
         Document mongoDoc = new Document("_id", id)
             .append("value", Document.parse(document.toString()));
         coll.insertOne(mongoDoc);
         return true;
+    }
+
+    /**
+     * docs 리스트를 _id 기준 중복 없이 한 번에 저장합니다.
+     *
+     * @param docs        JsonObject 리스트
+     * @param idExtractor 각 JsonObject에서 _id 문자열을 뽑아낼 함수
+     * @return 벌크 결과 객체
+     */
+    public BulkInsertResult saveAllIfNotExists(List<JsonObject> docs,
+        Function<JsonObject, String> idExtractor) {
+        List<WriteModel<Document>> models = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+
+        for (JsonObject doc : docs) {
+            String id = idExtractor.apply(doc);
+            ids.add(id);
+            Document d = new Document("_id", id)
+                .append("value", Document.parse(doc.toString()));
+
+            models.add(new UpdateOneModel<>(
+                Filters.eq("_id", id),
+                new Document("$setOnInsert", d),
+                new UpdateOptions().upsert(true)
+            ));
+        }
+
+        if (models.isEmpty()) {
+            return new BulkInsertResult(List.of(), List.of());
+        }
+
+        BulkWriteResult result = coll.bulkWrite(models,
+            new BulkWriteOptions().ordered(false));
+
+        List<String> inserted = result.getUpserts().stream()
+            .map(u -> u.getId().asString().getValue())
+            .toList();
+
+        List<String> skipped = ids.stream()
+            .filter(id -> !inserted.contains(id))
+            .toList();
+
+        return new BulkInsertResult(inserted, skipped);
     }
 
     public void close() {
