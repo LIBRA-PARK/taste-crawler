@@ -1,0 +1,32 @@
+<configuration>
+
+  <!-- 1) 기본 로그 폴더 설정 -->
+  <property name="LOG_DIR" value="logs"/>
+
+  <!-- 2) RollingFileAppender 정의 (날짜별 파일명) -->
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <!-- 현재 쓰는 파일은 그대로 logs/app-current.log -->
+    <file>${LOG_DIR}/app-current.log</file>
+
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <!--
+        매일 자정에 롤링하여,
+        logs/app-YYYY-MM-DD.log 형식으로 저장
+        (maxHistory, cleanHistoryOnStart 설정 생략 → 로그 보관 무제한)
+      -->
+      <fileNamePattern>${LOG_DIR}/app-%d{yyyy-MM-dd}.log</fileNamePattern>
+      <!-- 보관 기간 제한 없음 -->
+    </rollingPolicy>
+
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- 3) 루트 로거는 FILE만 사용 (콘솔 출력 제거) -->
+  <root level="INFO">
+    <appender-ref ref="FILE"/>
+  </root>
+
+</configuration>
