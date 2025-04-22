@@ -5,6 +5,12 @@ import static com.mongodb.client.model.Filters.eq;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.microsoft.playwright.Browser;
+import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.Page;
+import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.Response;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -13,6 +19,7 @@ import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.UpdateOptions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -66,12 +73,9 @@ class PlaywrightTest {
             String placeUrl = value.getString("place_url");
 
             try {
-                // 2) Playwright로 리뷰+상세 데이터 가져오기
                 JsonObject merged = PlaywrightManager
                     .instance()
                     .fetchKaKaoReviews(placeUrl);
-
-                // 3) KAKAO_REVIEWS 컬렉션에 upsert
                 reviewColl.updateOne(
                     eq("_id", docId),
                     new Document("$set", new Document("data", Document.parse(merged.toString()))),
@@ -98,5 +102,41 @@ class PlaywrightTest {
             }
         }
         return rawJson;
+    }
+
+    @Test
+    @DisplayName(value = "NAVER 동적 렌더링 크롤링 테스트")
+    void fetchNaverReveiw() throws InterruptedException {
+        try (Playwright pw = Playwright.create()) {
+            Browser browser = pw.chromium().launch(new BrowserType.LaunchOptions()
+                .setHeadless(false)
+            );
+            BrowserContext context = browser.newContext();
+            Page page = context.newPage();
+
+            Response targetResp = page.waitForResponse(
+                resp -> {
+                    if (!resp.url().contains("/graphql")) return false;
+                    String post = resp.request().postData();
+                    if (post == null || !post.contains("visitorReviews")) return false;
+                    String bizIds = resp.headers().get("x-gql-businessids");
+                    return "163636452".equals(bizIds);
+                },
+                () -> {
+                    page.navigate("https://map.naver.com/p/smart-around/place/163636452?placePath=/review");
+                }
+            );
+
+            System.out.println("▶️ Request Payload:\n" + targetResp.request().postData());
+
+            Map<String, String> hdr = targetResp.headers();
+            System.out.println("⬅️ Headers:");
+            System.out.println("   X-Gql-BusinessIds: " + hdr.get("x-gql-businessids"));
+            System.out.println("   X-Gql-Query-Names: " + hdr.get("x-gql-query-names"));
+
+            System.out.println("⬅️ Body:\n" + targetResp.text());
+
+            browser.close();
+        }
     }
 }
