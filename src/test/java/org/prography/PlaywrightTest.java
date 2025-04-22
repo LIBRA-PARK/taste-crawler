@@ -5,12 +5,17 @@ import static com.mongodb.client.model.Filters.eq;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
-import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.BrowserType.LaunchOptions;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.Page.NavigateOptions;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.Response;
+import com.microsoft.playwright.options.WaitUntilState;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -108,7 +113,7 @@ class PlaywrightTest {
     @DisplayName(value = "NAVER 동적 렌더링 크롤링 테스트")
     void fetchNaverReveiw() throws InterruptedException {
         try (Playwright pw = Playwright.create()) {
-            Browser browser = pw.chromium().launch(new BrowserType.LaunchOptions()
+            Browser browser = pw.chromium().launch(new LaunchOptions()
                 .setHeadless(false)
             );
             BrowserContext context = browser.newContext();
@@ -116,14 +121,19 @@ class PlaywrightTest {
 
             Response targetResp = page.waitForResponse(
                 resp -> {
-                    if (!resp.url().contains("/graphql")) return false;
+                    if (!resp.url().contains("/graphql")) {
+                        return false;
+                    }
                     String post = resp.request().postData();
-                    if (post == null || !post.contains("visitorReviews")) return false;
+                    if (post == null || !post.contains("visitorReviews")) {
+                        return false;
+                    }
                     String bizIds = resp.headers().get("x-gql-businessids");
                     return "163636452".equals(bizIds);
                 },
                 () -> {
-                    page.navigate("https://map.naver.com/p/smart-around/place/163636452?placePath=/review");
+                    page.navigate(
+                        "https://map.naver.com/p/smart-around/place/163636452?placePath=/review");
                 }
             );
 
@@ -137,6 +147,72 @@ class PlaywrightTest {
             System.out.println("⬅️ Body:\n" + targetResp.text());
 
             browser.close();
+        }
+    }
+
+    @Test
+    @DisplayName(value = "NAVER 동적 렌더링 크롤링 테스트")
+    void fetchSearch() throws InterruptedException {
+        final String script = """
+                    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                    window.chrome = { runtime: {} };
+                    Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko'] });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+            """;
+        String navigateUrl = "https://map.naver.com/p/search/서울_강남구_신사동_587-14,루위";
+        String apiPrefix = "https://map.naver.com/p/api/search/allSearch";
+
+        try (
+            Playwright playwright = Playwright.create();
+            Browser browser = playwright.chromium().launch(new LaunchOptions()
+                .setHeadless(true)
+                .setArgs(java.util.List.of(
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox"
+                ))
+            );
+            BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                .setUserAgent(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/114.0.5735.133 Safari/537.36"
+                )
+                .setLocale("ko-KR")
+                .setTimezoneId("Asia/Seoul")
+                .setViewportSize(1920, 1080)
+            );
+
+        ) {
+            context.addInitScript(script);
+            Page page = context.newPage();
+
+            Response resp = page.waitForResponse(
+                r -> r.ok() && r.request().resourceType().matches("xhr|fetch") && r.url()
+                    .startsWith(apiPrefix),
+                () -> page.navigate(navigateUrl, new NavigateOptions()
+                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+                    .setTimeout(30_000L))
+            );
+
+            JsonObject root = JsonParser.parseString(resp.text()).getAsJsonObject();
+            JsonArray list = root
+                .getAsJsonObject("result")
+                .getAsJsonObject("place")
+                .getAsJsonArray("list");
+
+            if (!list.isEmpty()) {
+                JsonElement first = list.get(0);
+                System.out.println("▶ list[0] as JSON String:");
+                System.out.println(first.toString());
+            } else {
+                System.out.println("⚠️ list 배열이 비어있습니다.");
+            }
+
+        } catch (PlaywrightException e) {
+            System.err.println("❌ Playwright error: " + e.getMessage());
+        } catch (JsonSyntaxException e) {
+            System.err.println("❌ JSON parse error: " + e.getMessage());
         }
     }
 }
