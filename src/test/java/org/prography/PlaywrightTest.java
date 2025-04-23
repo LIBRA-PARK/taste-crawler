@@ -7,6 +7,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import com.microsoft.playwright.APIRequest;
+import com.microsoft.playwright.APIRequestContext;
+import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType.LaunchOptions;
@@ -15,6 +18,7 @@ import com.microsoft.playwright.Page.NavigateOptions;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.Response;
+import com.microsoft.playwright.options.RequestOptions;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -129,11 +133,11 @@ class PlaywrightTest {
                         return false;
                     }
                     String bizIds = resp.headers().get("x-gql-businessids");
-                    return "163636452".equals(bizIds);
+                    return "65729586".equals(bizIds);
                 },
                 () -> {
                     page.navigate(
-                        "https://map.naver.com/p/smart-around/place/163636452?placePath=/review");
+                        "https://map.naver.com/p/smart-around/place/65729586?placePath=/review");
                 }
             );
 
@@ -147,6 +151,31 @@ class PlaywrightTest {
             System.out.println("⬅️ Body:\n" + targetResp.text());
 
             browser.close();
+        }
+    }
+
+    @Test
+    @DisplayName(value = "네이버 PK ID 조회 하는 테스트")
+    void getPKId() {
+        try (Playwright pw = Playwright.create()) {
+            // 1) APIRequestContext 준비 (Base URL, 필요 헤더 세팅)
+            APIRequestContext api = pw.request().newContext(new APIRequest.NewContextOptions()
+                    .setBaseURL("https://map.naver.com")
+                // .setExtraHTTPHeaders(...) 필요하다면 여기에
+            );
+
+            // 2) GET 호출 – 파라미터를 map 으로 전달
+            APIResponse res = api.get("/p/api/search/allSearch", RequestOptions.create()
+                .setData(Map.of(
+                    "query",       "서울 동대문구 장한로 161 치악산 횡연소요리전문점",
+                    "type",        "all",
+                    "searchCoord", "127.07174110000193;37.574837899999366"
+                ))
+            );
+
+            // 3) 결과 확인
+            System.out.println("Status: " + res.status());   // 200 이면 OK
+            System.out.println("Body: " + res.text());      // JSON 내용
         }
     }
 
