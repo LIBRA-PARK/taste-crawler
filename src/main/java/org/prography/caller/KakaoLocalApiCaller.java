@@ -1,26 +1,26 @@
-package org.prography.kakao.crawler;
+package org.prography.caller;
 
 import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.prography.caller.client.KakaoLocalApiClient;
 import org.prography.config.KakaoConfig;
 import org.prography.geo.GeoRectSlice;
 import org.prography.kakao.KakaoJsonParser;
-import org.prography.kakao.client.KakaoLocalApiClient;
 import org.prography.mongo.BulkInsertResult;
 import org.prography.mongo.MongoDocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class KakaoLocalCrawler {
+public class KakaoLocalApiCaller {
 
-    private static final Logger log = LoggerFactory.getLogger(KakaoLocalCrawler.class);
+    private static final Logger log = LoggerFactory.getLogger(KakaoLocalApiCaller.class);
 
     private final KakaoLocalApiClient client;
     private final MongoDocumentRepository repository;
     private final GeoRectSlice rectSlice;
 
-    public KakaoLocalCrawler(KakaoLocalApiClient client, MongoDocumentRepository repository,
+    public KakaoLocalApiCaller(KakaoLocalApiClient client, MongoDocumentRepository repository,
         GeoRectSlice rectSlice) {
         this.client = client;
         this.repository = repository;
