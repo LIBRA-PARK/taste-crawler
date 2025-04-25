@@ -7,9 +7,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
-import com.microsoft.playwright.APIRequest;
-import com.microsoft.playwright.APIRequestContext;
-import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType.LaunchOptions;
@@ -18,7 +15,6 @@ import com.microsoft.playwright.Page.NavigateOptions;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.Response;
-import com.microsoft.playwright.options.RequestOptions;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -27,28 +23,35 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.UpdateOptions;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.prography.kakao.crawler.PlaywrightManager;
+import org.prography.crawler.PlaywrightManager;
+import org.prography.crawler.utils.ParserUtils;
 
 class PlaywrightTest {
 
     private static MongoClient mongoClient;
     private static MongoDatabase db;
-    private static MongoCollection<Document> infoColl;
-    private static MongoCollection<Document> reviewColl;
+    private static MongoCollection<Document> kakaoInfoColl;
+    private static MongoCollection<Document> KakaoReviewColl;
+    private static MongoCollection<Document> naverInfoColl;
+    private static MongoCollection<Document> naverReviewColl;
 
     @BeforeAll
     static void setup() {
         mongoClient = MongoClients.create("mongodb://localhost:27017");
         db = mongoClient.getDatabase("crawler");
-        infoColl = db.getCollection("KAKAO_INFO");
-        reviewColl = db.getCollection("KAKAO_REVIEW");
+        kakaoInfoColl = db.getCollection("KAKAO_INFO");
+        KakaoReviewColl = db.getCollection("KAKAO_REVIEW");
+        naverInfoColl = db.getCollection("NAVER_INFO");
+        naverReviewColl = db.getCollection("NAVER_REVIEW");
     }
 
     @AfterAll
@@ -57,60 +60,40 @@ class PlaywrightTest {
         mongoClient.close();
     }
 
-
-    @Test
-    @DisplayName(value = "동적 렌더링 후 네트워크 리소스 반환")
-    void testDynamicRender() {
-        PlaywrightManager pwMgr = PlaywrightManager.instance();
-
-        JsonObject body = pwMgr.fetchKaKaoReviews("http://place.map.kakao.com/8117481");
-
-        System.out.println(body);
-        pwMgr.close();
-    }
-
     @Test
     void fetchAndStoreReviewsForRandomPlaces() {
-        // 1) KAKAO_INFO에서 랜덤 3개 문서 샘플링
-        List<Document> samples = infoColl.aggregate(
-            List.of(Aggregates.sample(3))
+        List<Document> samples = kakaoInfoColl.aggregate(
+            List.of(Aggregates.sample(5))
         ).into(new ArrayList<>());
 
+        List<String> placeUrls = new ArrayList<>(samples.size());
+        Map<String, String> placeIdToDocId = new HashMap<>(samples.size());
         for (Document infoDoc : samples) {
             String docId = infoDoc.getString("_id");
-            Document value = infoDoc.get("value", Document.class);
-            String placeUrl = value.getString("place_url");
+            String placeUrl = infoDoc.get("value", Document.class).getString("place_url");
+            String placeId = ParserUtils.extractKakaoPlaceId(placeUrl);
 
-            try {
-                JsonObject merged = PlaywrightManager
-                    .instance()
-                    .fetchKaKaoReviews(placeUrl);
-                reviewColl.updateOne(
-                    eq("_id", docId),
-                    new Document("$set", new Document("data", Document.parse(merged.toString()))),
-                    new UpdateOptions().upsert(true)
-                );
+            placeUrls.add(placeUrl);
+            placeIdToDocId.put(placeId, docId);
+        }
 
-                System.out.printf("✔ Saved reviews for %s%n", docId);
+        Map<String, JsonObject> reviewsByPlaceId =
+            PlaywrightManager.instance().fetchKaKaoReviews(placeUrls);
 
-            } catch (RuntimeException e) {
-                System.err.printf("✘ Failed for %s (%s): %s%n",
-                    docId, placeUrl, e.getMessage());
+        reviewsByPlaceId.forEach((placeId, mergedJson) -> {
+            String docId = placeIdToDocId.get(placeId);
+            if (docId == null) {
+                System.err.printf("✘ No docId found for placeId=%s%n", placeId);
+                return;
             }
-        }
-    }
-
-    private JsonObject stripReviewMeta(JsonObject rawJson) {
-        if (!rawJson.has("reviews") || !rawJson.get("reviews").isJsonArray()) {
-            return rawJson;
-        }
-        JsonArray reviews = rawJson.getAsJsonArray("reviews");
-        for (JsonElement el : reviews) {
-            if (el.isJsonObject()) {
-                el.getAsJsonObject().remove("meta");
-            }
-        }
-        return rawJson;
+            // upsert with merged JSON
+            KakaoReviewColl.updateOne(
+                eq("_id", docId),
+                new Document("$set", new Document("data", Document.parse(mergedJson.toString()))),
+                new UpdateOptions().upsert(true)
+            );
+            System.out.printf("✔ Saved reviews for docId=%s (placeId=%s)%n", docId, placeId);
+        });
     }
 
     @Test
@@ -155,28 +138,59 @@ class PlaywrightTest {
     }
 
     @Test
-    @DisplayName(value = "네이버 PK ID 조회 하는 테스트")
-    void getPKId() {
-        try (Playwright pw = Playwright.create()) {
-            // 1) APIRequestContext 준비 (Base URL, 필요 헤더 세팅)
-            APIRequestContext api = pw.request().newContext(new APIRequest.NewContextOptions()
-                    .setBaseURL("https://map.naver.com")
-                // .setExtraHTTPHeaders(...) 필요하다면 여기에
-            );
+    void fetchNaverSearch() {
+        List<Document> samples = kakaoInfoColl.aggregate(
+            List.of(Aggregates.sample(5))
+        ).into(new ArrayList<>());
 
-            // 2) GET 호출 – 파라미터를 map 으로 전달
-            APIResponse res = api.get("/p/api/search/allSearch", RequestOptions.create()
-                .setData(Map.of(
-                    "query",       "서울 동대문구 장한로 161 치악산 횡연소요리전문점",
-                    "type",        "all",
-                    "searchCoord", "127.07174110000193;37.574837899999366"
-                ))
-            );
+        List<String> ids = samples.stream().map(sample -> sample.getString("_id")).toList();
+        Map<String, JsonObject> reviewsByPlaceId =
+            PlaywrightManager.instance().fetchNaverBusinessId(ids);
 
-            // 3) 결과 확인
-            System.out.println("Status: " + res.status());   // 200 이면 OK
-            System.out.println("Body: " + res.text());      // JSON 내용
-        }
+        reviewsByPlaceId.forEach((placeId, mergedJson) -> {
+            if (placeId == null) {
+                System.err.printf("✘ No docId found for placeId=%s%n", placeId);
+                return;
+            }
+            // upsert with merged JSON
+            naverInfoColl.updateOne(
+                eq("_id", placeId),
+                new Document("$set", new Document("data", Document.parse(mergedJson.toString()))),
+                new UpdateOptions().upsert(true)
+            );
+            System.out.printf("✔ Saved Naver Id=%s %n", placeId);
+        });
+    }
+
+    @Test
+    void fetchNaverReview() {
+        List<Document> samples = naverInfoColl.aggregate(
+            List.of(Aggregates.sample(1))
+        ).into(new ArrayList<>());
+
+        Map<String, String> placeIdToId = samples.stream()
+            .collect(Collectors.toMap(
+                sample -> sample.getString("_id"),
+                sample -> sample.get("data", Document.class).getString("id"),          // value: id
+                (existing, replacement) -> existing
+            ));
+
+        Map<String, JsonObject> reviewsByPlaceId =
+            PlaywrightManager.instance().fetchNaverReview(placeIdToId);
+
+        reviewsByPlaceId.forEach((placeId, mergedJson) -> {
+            if (placeId == null) {
+                System.err.printf("✘ No docId found for placeId=%s%n", placeId);
+                return;
+            }
+            // upsert with merged JSON
+            naverReviewColl.updateOne(
+                eq("_id", placeId),
+                new Document("$set", new Document("data", Document.parse(mergedJson.toString()))),
+                new UpdateOptions().upsert(true)
+            );
+            System.out.printf("✔ Saved Naver Id=%s %n", placeId);
+        });
     }
 
     @Test
