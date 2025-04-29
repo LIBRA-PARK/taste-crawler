@@ -9,12 +9,16 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.BrowserType.LaunchOptions;
+import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Page.NavigateOptions;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.Response;
+import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -256,6 +260,86 @@ class PlaywrightTest {
             System.err.println("❌ Playwright error: " + e.getMessage());
         } catch (JsonSyntaxException e) {
             System.err.println("❌ JSON parse error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName(value = "실제 렌더 후에 크롤링")
+    void testDynamicCrawler() {
+        String visitUrl = "https://map.naver.com/p/entry/place/11871325?c=15.00,0,0,0,dh&placePath=/review";
+        String graphqlUrlPart = "/graphql";
+
+        try (Playwright pw = Playwright.create();
+            Browser browser = pw.chromium().launch(
+                new BrowserType.LaunchOptions().setHeadless(false)
+            );
+            BrowserContext ctx = browser.newContext();
+            Page page = ctx.newPage()
+        ) {
+            List<String> graphqlResponses = new ArrayList<>();
+
+            // 1) 초기 네비게이트와 동시에 첫 /graphql 응답 대기·수집
+            Response initial = page.waitForResponse(
+                response -> response.ok()
+                    && ("xhr".equals(response.request().resourceType())
+                    || "fetch".equals(response.request().resourceType()))
+                    && response.url().contains(graphqlUrlPart),
+
+                () -> page.navigate(
+                    visitUrl,
+                    new Page.NavigateOptions()
+                        .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+                        .setTimeout(30_000)
+                )
+            );
+            graphqlResponses.add(initial.text());
+            System.out.println("▶ Collected initial GraphQL response");
+
+            Locator moreBtn = page.locator("span.TeItc");
+
+            // 2) 최대 3번, 버튼 로드 대기 → 클릭 → GraphQL 응답 대기·수집
+            for (int i = 0; i < 3; i++) {
+                try {
+                    // 버튼이 화면에 도착할 때까지 최대 10초 대기
+                    page.waitForSelector(
+                        "span.TeItc",
+                        new Page.WaitForSelectorOptions()
+                            .setTimeout(10_000)
+                            .setState(WaitForSelectorState.VISIBLE)
+                    );
+
+                    // 클릭 → 그로 인한 /graphql 응답만 골라서 대기
+                    Response resp = page.waitForResponse(
+                        r -> r.ok()
+                            && ("xhr".equals(r.request().resourceType())
+                            || "fetch".equals(r.request().resourceType()))
+                            && r.url().contains(graphqlUrlPart),
+
+                        () -> moreBtn.first().click()
+                    );
+
+                    graphqlResponses.add(resp.text());
+                    System.out.printf("▶ Collected #%d click-response%n", i + 1);
+
+                    // SPA 로딩 마무리 대기
+                    page.waitForLoadState(LoadState.NETWORKIDLE);
+
+                } catch (PlaywrightException e) {
+                    System.out.println(
+                        "▶ No more button or timeout at iteration " + i + ", stopping.");
+                    break;
+                }
+            }
+
+            // 3) 결과 확인
+            System.out.println("=== All collected GraphQL payloads ===");
+            for (int idx = 0; idx < graphqlResponses.size(); idx++) {
+                System.out.printf("---- Response %d ----%n%s%n%n",
+                    idx, graphqlResponses.get(idx));
+            }
+
+        } catch (PlaywrightException e) {
+            System.err.println("Playwright error: " + e.getMessage());
         }
     }
 }
