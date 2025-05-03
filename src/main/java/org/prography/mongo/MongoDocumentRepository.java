@@ -44,6 +44,10 @@ public class MongoDocumentRepository {
 
 
     public void saveKakaoInfo(KakaoLocalSearchResponse response) {
+        if (response.documents().isEmpty()) {
+            return;
+        }
+
         List<Document> docs = response.documents().stream()
             .map(res -> new Document("_id", res.toId())
                 .append("value", res)).toList();

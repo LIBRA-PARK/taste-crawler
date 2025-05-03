@@ -16,6 +16,8 @@ public class KakaoCrawler {
     private static final MongoDocumentRepository repository = MongoDocumentRepository.getInstance();
     private static final double DEFAULT_STEP = 0.005; // 약 500m
     private static final long DEFAULT_THROTTLE_SECONDS = 10;  // 10초
+    private static final String KAKAO_INFO_PREFIX = "/places/panel3/";
+    private static final String KAKAO_REVIEW_PREFIX = "/places/tab/reviews/kakaomap/";
 
     private final String admName;
     private final KakaoLocalApiCaller caller;
@@ -50,9 +52,7 @@ public class KakaoCrawler {
                     log.error("API 호출 실패 (rect={}, page={}): {}", rect, page, e.getMessage());
                     break;
                 }
-                if (response.documents().isEmpty()) {
-                    break;
-                }
+                
                 repository.saveKakaoInfo(response);
 
                 if (response.meta().isEnd() || page >= 45) {
@@ -65,6 +65,10 @@ public class KakaoCrawler {
         }
 
         repository.close();
+    }
+
+    public void crawlReview() {
+
     }
 
     private void throttle(long ms) {
