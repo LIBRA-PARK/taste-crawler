@@ -1,96 +1,80 @@
 package org.prography.caller;
 
-import com.google.gson.JsonObject;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import org.prography.caller.client.KakaoLocalApiClient;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.http.HttpResponse.BodyHandlers;
+import java.time.Duration;
+import org.prography.caller.client.KakaoLocalSearchResponse;
 import org.prography.config.KakaoConfig;
-import org.prography.geo.GeoRectSlice;
-import org.prography.kakao.KakaoJsonParser;
-import org.prography.mongo.BulkInsertResult;
-import org.prography.mongo.MongoDocumentRepository;
+import org.prography.config.RequestHeaders;
+import org.prography.parser.GsonProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class KakaoLocalApiCaller {
 
     private static final Logger log = LoggerFactory.getLogger(KakaoLocalApiCaller.class);
+    private static final String SCHEME = "https";
+    private static final String HOST = "dapi.kakao.com";
+    private static final String PATH = "/v2/local/search/category.json";
+    private static final String CATEGORY = "FD6";
+    private static final int SIZE = 15;
 
-    private final KakaoLocalApiClient client;
-    private final MongoDocumentRepository repository;
-    private final GeoRectSlice rectSlice;
+    private static final HttpClient client = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .build();
 
-    public KakaoLocalApiCaller(KakaoLocalApiClient client, MongoDocumentRepository repository,
-        GeoRectSlice rectSlice) {
-        this.client = client;
-        this.repository = repository;
-        this.rectSlice = rectSlice;
+    public KakaoLocalApiCaller() {
     }
 
-    public void crawl(String admName) {
-        List<String> rects = rectSlice.sliceRectFromFeature(admName, 0.002);
-        if (rects.isEmpty()) {
-            log.info("해당 행정구역({})에 대한 RECT 가 존재하질 않습니다.", admName);
-        }
-        for (String rect : rects) {
-            log.info("▶ 슬라이스 처리 시작: {}", rect);
-            crawlOneRect(rect);
-        }
-        repository.close();
-    }
+    public KakaoLocalSearchResponse call(String rect, int page) throws KakaoLocalApiException {
+        URI uri = buildUri(rect, page);
 
-    private void crawlOneRect(String rect) {
-        int page = 1;
-        int totalElements = 0;
-        int totalInserted = 0;
-        int totalSkipped = 0;
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(uri)
+            .header(RequestHeaders.AUTHORIZATION, KakaoConfig.KAKAO_API_KEY)
+            .header(RequestHeaders.ACCEPT, RequestHeaders.APPLICATION_JSON)
+            .GET()
+            .build();
 
-        while (true) {
-            JsonObject response;
-            try {
-                response = client.callLocalSearchApi(rect, page);
-            } catch (KakaoLocalApiClient.ApiException e) {
-                log.error("API 호출 실패 (rect={}, page={}): {}", rect, page, e.getMessage());
-                return;
-            }
-
-            List<JsonObject> docs = KakaoJsonParser.getDocuments(response);
-            totalElements += docs.size();
-            BulkInsertResult insertResult = repository.saveAllIfNotExists(docs,
-                doc -> KakaoJsonParser.toId(doc, "address_name", "place_name"));
-
-            totalInserted += insertResult.insertedCount();
-            totalSkipped += insertResult.skippedCount();
-
-            log.info("페이지 {}: 총={}, 저장={}, 중복={}",
-                page,
-                docs.size(),
-                insertResult.insertedCount(),
-                insertResult.skippedCount());
-
-            for (String skippedId : insertResult.skipped()) {
-                log.debug("중복 스킵 ID: {}", skippedId);
-            }
-
-            boolean isEnd = KakaoJsonParser.isEndPage(response);
-            if (isEnd || page >= 45) {
-                log.info(
-                    "■ 완료: {} ▶ pages={} totalElements={} totalInserted={} totalSkipped={}",
-                    rect, page, totalElements, totalInserted, totalSkipped);
-                break;
-            }
-
-            page++;
-            throttle(KakaoConfig.DEFAULT_THROTTLE_MS);
-        }
-    }
-
-    private void throttle(long ms) {
         try {
-            TimeUnit.MILLISECONDS.sleep(ms);
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
+            HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
+            int code = response.statusCode();
+            if (code != 200) {
+                log.error("API 호출 실패: HTTP {}", code);
+                throw new RuntimeException("API 호출 실패: HTTP " + code + "\n" + response.body());
+            }
+            return GsonProvider.GSON.fromJson(response.body(), KakaoLocalSearchResponse.class);
+        } catch (IOException | InterruptedException e) {
+            throw new KakaoLocalApiException("API 호출 중 예외 발생", e);
         }
     }
 
+    private URI buildUri(String rect, int page) {
+        try {
+            String query = String.format(
+                "category_group_code=%s&size=%d&rect=%s&page=%d",
+                CATEGORY, SIZE, rect, page
+            );
+            return new URI(SCHEME, HOST, PATH, query, null);
+        } catch (URISyntaxException e) {
+            log.error("잘못된 URI 파라미터: rect={}, page={}", rect, page, e);
+            throw new IllegalArgumentException("잘못된 URI 파라미터 삽입");
+        }
+    }
+
+    public static class KakaoLocalApiException extends RuntimeException {
+
+        public KakaoLocalApiException(String msg) {
+            super(msg);
+        }
+
+        public KakaoLocalApiException(String msg, Throwable cause) {
+            super(msg, cause);
+        }
+    }
 }

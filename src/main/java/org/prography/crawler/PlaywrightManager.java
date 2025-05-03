@@ -181,8 +181,6 @@ public class PlaywrightManager {
         for (Entry<String, String> entry : ids.entrySet()) {
             try (
                 BrowserContext browserContext = browser.newContext(new Browser.NewContextOptions()
-                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)…")
-                    .setLocale("ko-KR")
                 );
 
                 Page page = browserContext.newPage();
@@ -202,12 +200,14 @@ public class PlaywrightManager {
                     () -> {
                         page.navigate(
                             String.format(
-                                "https://map.naver.com/p/smart-around/place/%s?placePath=/review",
+                                "https://map.naver.com/p/smart-around/place/%s?&placePath=/review",
                                 entry.getValue()
                             ));
                     }
                 );
-                result.put(entry.getKey(), JsonParser.parseString(resp.text()).getAsJsonObject());
+                JsonObject wrapper = new JsonObject();
+                wrapper.add("data", JsonParser.parseString(resp.text()));
+                result.put(entry.getKey(), wrapper);
             }
         }
         return result;

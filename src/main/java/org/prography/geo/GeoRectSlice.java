@@ -29,7 +29,6 @@ public final class GeoRectSlice {
     }
 
     private static final String RESOURCE_PATH = "HangJeongDong_ver20250401.geojson";
-    private static final double DEFAULT_STEP = 0.005; // 약 500m
     private final JsonArray features;
 
     private static class Holder {
@@ -51,10 +50,6 @@ public final class GeoRectSlice {
         } catch (IOException | JsonIOException | JsonSyntaxException e) {
             throw new IllegalStateException("Failed to load/parse geojson: " + RESOURCE_PATH, e);
         }
-    }
-
-    public List<String> sliceRectFromFeature(String admName) {
-        return sliceRectFromFeature(admName, DEFAULT_STEP);
     }
 
     /**
