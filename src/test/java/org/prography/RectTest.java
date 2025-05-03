@@ -44,7 +44,7 @@ class RectTest {
     @DisplayName(value = "행정 구역에 맞춰서 자르기")
     void sliceRect() {
         GeoRectSlice geoRectSlice = GeoRectSlice.getInstance();
-        List<String> rectList = geoRectSlice.sliceRectFromFeature("서울특별시 강남구 삼성1동");
+        List<String> rectList = geoRectSlice.sliceRectFromFeature("서울특별시 강남구 삼성1동", 0.005);
 
         for (String s : rectList) {
             System.out.println(s);

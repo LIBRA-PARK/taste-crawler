@@ -266,7 +266,7 @@ class PlaywrightTest {
     @Test
     @DisplayName(value = "실제 렌더 후에 크롤링")
     void testDynamicCrawler() {
-        String visitUrl = "https://map.naver.com/p/entry/place/11871325?c=15.00,0,0,0,dh&placePath=/review";
+        String visitUrl = "https://map.naver.com/p/entry/place/1972616895?c=15.00,0,0,0,dh&placePath=/review";
         String graphqlUrlPart = "/graphql";
 
         try (Playwright pw = Playwright.create();
