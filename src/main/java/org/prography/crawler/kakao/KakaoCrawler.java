@@ -2,9 +2,10 @@ package org.prography.crawler.kakao;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import org.prography.caller.KakaoLocalApiCaller;
-import org.prography.caller.KakaoLocalApiCaller.KakaoLocalApiException;
-import org.prography.caller.client.KakaoLocalSearchResponse;
+import org.prography.crawler.exception.KakaoLocalApiException;
+import org.prography.crawler.kakao.client.KakaoLocalApiClient;
+import org.prography.crawler.kakao.client.KakaoMapClient;
+import org.prography.crawler.kakao.dto.api.KakaoLocalSearchResponse;
 import org.prography.geo.GeoRectSlice;
 import org.prography.mongo.MongoDocumentRepository;
 import org.slf4j.Logger;
@@ -16,11 +17,10 @@ public class KakaoCrawler {
     private static final MongoDocumentRepository repository = MongoDocumentRepository.getInstance();
     private static final double DEFAULT_STEP = 0.005; // 약 500m
     private static final long DEFAULT_THROTTLE_SECONDS = 10;  // 10초
-    private static final String KAKAO_INFO_PREFIX = "/places/panel3/";
-    private static final String KAKAO_REVIEW_PREFIX = "/places/tab/reviews/kakaomap/";
 
     private final String admName;
-    private final KakaoLocalApiCaller caller;
+    private final KakaoLocalApiClient kakaoLocalApiClient;
+    private final KakaoMapClient kakaoMapClient;
     private final List<String> rectList;
 
 
@@ -28,7 +28,8 @@ public class KakaoCrawler {
         GeoRectSlice slice = GeoRectSlice.getInstance();
         this.admName = adnName;
         this.rectList = slice.sliceRectFromFeature(adnName, step);
-        this.caller = new KakaoLocalApiCaller();
+        this.kakaoLocalApiClient = new KakaoLocalApiClient();
+        this.kakaoMapClient = new KakaoMapClient();
     }
 
     public KakaoCrawler(String admName) {
@@ -47,12 +48,12 @@ public class KakaoCrawler {
             while (true) {
                 KakaoLocalSearchResponse response;
                 try {
-                    response = caller.call(rect, page);
+                    response = kakaoLocalApiClient.call(rect, page);
                 } catch (KakaoLocalApiException e) {
                     log.error("API 호출 실패 (rect={}, page={}): {}", rect, page, e.getMessage());
                     break;
                 }
-                
+
                 repository.saveKakaoInfo(response);
 
                 if (response.meta().isEnd() || page >= 45) {

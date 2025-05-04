@@ -1,4 +1,4 @@
-package org.prography.caller.client;
+package org.prography.crawler.kakao.dto.api;
 
 public record Document(
     String id,

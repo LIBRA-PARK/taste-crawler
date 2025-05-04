@@ -1,4 +1,4 @@
-package org.prography.caller;
+package org.prography.crawler.kakao.client;
 
 import java.io.IOException;
 import java.net.URI;
@@ -8,16 +8,17 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
-import org.prography.caller.client.KakaoLocalSearchResponse;
 import org.prography.config.KakaoConfig;
 import org.prography.config.RequestHeaders;
+import org.prography.crawler.exception.KakaoLocalApiException;
+import org.prography.crawler.kakao.dto.api.KakaoLocalSearchResponse;
 import org.prography.parser.GsonProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class KakaoLocalApiCaller {
+public class KakaoLocalApiClient {
 
-    private static final Logger log = LoggerFactory.getLogger(KakaoLocalApiCaller.class);
+    private static final Logger log = LoggerFactory.getLogger(KakaoLocalApiClient.class);
     private static final String SCHEME = "https";
     private static final String HOST = "dapi.kakao.com";
     private static final String PATH = "/v2/local/search/category.json";
@@ -28,7 +29,7 @@ public class KakaoLocalApiCaller {
         .connectTimeout(Duration.ofSeconds(10))
         .build();
 
-    public KakaoLocalApiCaller() {
+    public KakaoLocalApiClient() {
     }
 
     public KakaoLocalSearchResponse call(String rect, int page) throws KakaoLocalApiException {
@@ -64,17 +65,6 @@ public class KakaoLocalApiCaller {
         } catch (URISyntaxException e) {
             log.error("잘못된 URI 파라미터: rect={}, page={}", rect, page, e);
             throw new IllegalArgumentException("잘못된 URI 파라미터 삽입");
-        }
-    }
-
-    public static class KakaoLocalApiException extends RuntimeException {
-
-        public KakaoLocalApiException(String msg) {
-            super(msg);
-        }
-
-        public KakaoLocalApiException(String msg, Throwable cause) {
-            super(msg, cause);
         }
     }
 }

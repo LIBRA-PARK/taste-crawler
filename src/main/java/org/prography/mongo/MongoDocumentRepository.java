@@ -14,7 +14,7 @@ import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.ReplaceOptions;
 import java.util.List;
 import org.bson.Document;
-import org.prography.caller.client.KakaoLocalSearchResponse;
+import org.prography.crawler.kakao.dto.api.KakaoLocalSearchResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
