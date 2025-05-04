@@ -8,7 +8,14 @@ class KakaoCrawlerTest {
     @Test
     @DisplayName(value = "리팩토링 카카오 크롤러 테스트")
     void test() {
-        KakaoCrawler crawler = new KakaoCrawler("서울특별시 강남구 삼성2동", 0.002);
+        KakaoLocalApiCrawler crawler = new KakaoLocalApiCrawler("서울특별시 송파구 위례동", 0.002);
         crawler.crawlPlaceUrl();
+    }
+
+    @Test
+    @DisplayName(value = "")
+    void KAKAO_MAP_CRAWLER() {
+        KakaoMapCrawler crawler = new KakaoMapCrawler();
+        crawler.crawlReview();
     }
 }
