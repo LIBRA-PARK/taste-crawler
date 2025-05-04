@@ -2,10 +2,10 @@ package org.prography.crawler.kakao.dto.map.info.summary;
 
 public record RoadView(
     String panoId,
-    int pan,
-    int tilt,
+    double pan,
+    double tilt,
     Point point,
-    int level
+    double level
 ) {
 
 }

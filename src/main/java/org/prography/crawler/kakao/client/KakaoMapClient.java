@@ -1,5 +1,10 @@
 package org.prography.crawler.kakao.client;
 
+import static io.github.resilience4j.ratelimiter.RateLimiter.waitForPermission;
+
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -29,7 +34,31 @@ public class KakaoMapClient {
         .connectTimeout(Duration.ofSeconds(10))
         .build();
 
+    private final RateLimiter rateLimiter;
+
     public KakaoMapClient() {
+        RateLimiterConfig config = RateLimiterConfig.custom()
+            .limitForPeriod(5)
+            .limitRefreshPeriod(Duration.ofSeconds(1))
+            .timeoutDuration(Duration.ofSeconds(5))
+            .build();
+        this.rateLimiter = RateLimiter.of("kakaoApiLimiter", config);
+    }
+
+    private void acquirePermitAndJitter() {
+        try {
+            // 최대 500ms 대기 후 permit 없으면 RequestNotPermitted 예외 발생
+            waitForPermission(rateLimiter, 500);
+        } catch (RequestNotPermitted ex) {
+            log.warn("RateLimiter: permit 획득 타임아웃 (500ms), 바로 진행합니다.");
+        }
+        // 300~2000ms 사이 랜덤 지터
+        long jitter = ThreadLocalRandom.current().nextLong(300, 2001);
+        try {
+            Thread.sleep(jitter);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public KakaoInfoResponse callInfo(String placeId) {
@@ -72,6 +101,8 @@ public class KakaoMapClient {
     }
 
     public KakaoReviewResponse callReview(String placeId, long lastReviewId) {
+        acquirePermitAndJitter();
+        
         URI uri = buildReviewUri(placeId, lastReviewId);
 
         String agent = RequestHeaders.USER_AGENTS.get(
