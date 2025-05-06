@@ -82,11 +82,20 @@ public class KakaoMapClient {
             HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
             int code = response.statusCode();
             if (code != 200) {
-                log.error("가게 정보 API 호출 실패: HTTP {}", code);
+                log.error("가게 정보 API 호출 실패: HTTP {} {}", code, response.body());
                 throw new RuntimeException("API 호출 실패: HTTP " + code + "\n" + response.body());
             }
             return GsonProvider.GSON.fromJson(response.body(), KakaoInfoResponse.class);
         } catch (IOException | InterruptedException e) {
+            log.error("API 호출 중 예외 발생 {}", e.getMessage(), e);
+            Throwable cause = e;
+            while (cause != null) {
+                log.warn("예외 원인 체인: {}", cause.getClass().getName() + ": " + cause.getMessage());
+                if (cause.getMessage() != null && cause.getMessage().contains("GOAWAY")) {
+                    log.error("서버로부터 GOAWAY 프레임 수신됨 → 커넥션 종료로 판단");
+                }
+                cause = cause.getCause();
+            }
             throw new KakaoMapRequestException("API 호출 중 예외 발생", e);
         }
     }
@@ -102,7 +111,7 @@ public class KakaoMapClient {
 
     public KakaoReviewResponse callReview(String placeId, long lastReviewId) {
         acquirePermitAndJitter();
-        
+
         URI uri = buildReviewUri(placeId, lastReviewId);
 
         String agent = RequestHeaders.USER_AGENTS.get(
@@ -124,11 +133,20 @@ public class KakaoMapClient {
             HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
             int code = response.statusCode();
             if (code != 200) {
-                log.error("리뷰 API 호출 실패: HTTP {}", code);
-                throw new RuntimeException("API 호출 실패: HTTP " + code + "\n" + response.body());
+                log.error("리뷰 API 호출 실패: HTTP {}, {}", code, response.body());
             }
             return GsonProvider.GSON.fromJson(response.body(), KakaoReviewResponse.class);
         } catch (IOException | InterruptedException e) {
+            log.error("API 호출 중 예외 발생 {}", e.getMessage(), e);
+            Throwable cause = e;
+            while (cause != null) {
+                log.warn("예외 원인 체인: {}", cause.getClass().getName() + ": " + cause.getMessage());
+                if (cause.getMessage() != null && cause.getMessage().contains("GOAWAY")) {
+                    log.error("서버로부터 GOAWAY 프레임 수신됨 → 커넥션 종료로 판단");
+                }
+                cause = cause.getCause();
+            }
+
             throw new KakaoMapRequestException("API 호출 중 예외 발생", e);
         }
     }
